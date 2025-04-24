@@ -1,0 +1,66 @@
+/* src/pages/SavedUPI.css */
+
+/* Saved UPI section container */
+.profile-section {
+    padding: 20px;
+  }
+  
+  /* Empty state heading (e.g., "No UPAs saved to be shown") */
+  .profile-section h3 {
+    font-size: 18px;
+    color: #333; /* Dark gray for the heading */
+    font-weight: 500; /* Medium weight for emphasis */
+    margin-bottom: 20px;
+    text-align: center; /* Center the empty state message */
+  }
+  
+  /* FAQ section */
+  .faq-section {
+    margin-top: 20px;
+  }
+  
+  /* FAQ section heading */
+  .faq-section h4 {
+    font-size: 16px;
+    color: #333; /* Dark gray for the FAQ heading */
+    font-weight: 500;
+    margin-bottom: 15px;
+  }
+  
+  /* Individual FAQ item */
+  .faq-item {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e0e0e0; /* Subtle border between FAQ items */
+  }
+  
+  /* FAQ question */
+  .faq-item p:first-child {
+    font-size: 14px;
+    font-weight: 600; /* Bold for the question */
+    color: #333; /* Dark gray for the question */
+    margin-bottom: 5px;
+  }
+  
+  /* FAQ answer */
+  .faq-item p:last-child {
+    font-size: 14px;
+    color: #555; /* Medium gray for the answer */
+    line-height: 1.5;
+  }
+  
+  /* "View all FAQs" link */
+  .view-faq-link {
+    display: inline-block;
+    font-size: 14px;
+    color: #2874f0; /* Flipkart's blue for the link */
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+  
+  /* Hover effect for "View all FAQs" link */
+  .view-faq-link:hover {
+    color: #1a5dc7; /* Darker blue on hover */
+    text-decoration: underline;
+  }

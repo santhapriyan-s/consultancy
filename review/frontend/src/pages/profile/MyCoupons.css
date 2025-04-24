@@ -1,0 +1,205 @@
+/* src/pages/Coupons.css */
+
+/* Coupon section container */
+.profile-section {
+    padding: 20px;
+  }
+  
+  /* Heading for the coupons section */
+  .profile-section h3 {
+    font-size: 18px;
+    color: #333; /* Dark gray for the heading */
+    margin-bottom: 20px;
+    font-weight: 500; /* Medium weight for emphasis */
+  }
+  
+  /* Individual coupon item */
+  .coupon-item {
+    background-color: #f9f9f9; /* Light gray background for each coupon */
+    border: 1px solid #e0e0e0; /* Subtle border */
+    border-radius: 8px; /* Rounded corners */
+    padding: 15px; /* Padding inside the coupon */
+    margin-bottom: 15px; /* Space between coupons */
+    transition: transform 0.2s ease, box-shadow 0.2s ease; /* Smooth hover animation */
+  }
+  
+  /* Hover effect for coupon item */
+  .coupon-item:hover {
+    transform: translateY(-3px); /* Slight lift on hover */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); /* Subtle shadow on hover */
+  }
+  
+  /* Coupon code (e.g., "Mantra L1FPO @ 2699") */
+  .coupon-item p:first-child {
+    font-size: 16px;
+    font-weight: 600; /* Bold for the coupon code */
+    color: #2874f0; /* Flipkart's blue for the coupon code */
+    margin-bottom: 5px;
+  }
+  
+  /* Discount and validity text (e.g., "Extra ₹100 OFF (Valid till: ...)") */
+  .coupon-item p:nth-child(2) {
+    font-size: 14px;
+    color: #555; /* Medium gray for the discount and validity */
+    margin-bottom: 10px;
+  }
+  
+  /* "View T&C" link */
+  .view-tc-link {
+    font-size: 12px;
+    color: #2874f0; /* Flipkart's blue for the link */
+    text-decoration: none; /* Remove underline */
+    font-weight: 500;
+    transition: color 0.2s ease; /* Smooth color transition on hover */
+  }
+  
+  /* Hover effect for the "View T&C" link */
+  .view-tc-link:hover {
+    color: #1a5dc7; /* Darker blue on hover */
+    text-decoration: underline; /* Underline on hover for emphasis */
+  }
+  /* Coupons.css */
+
+.coupons-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.coupons-header {
+  margin-bottom: 30px;
+}
+
+.coupons-header h2 {
+  font-size: 1.8rem;
+  color: #212121;
+  margin-bottom: 10px;
+}
+
+.coupons-header p {
+  color: #666;
+  font-size: 1rem;
+}
+
+.coupons-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.coupon-card {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: transform 0.3s ease;
+  border: 1px solid #e0e0e0;
+}
+
+.coupon-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.coupon-badge {
+  background-color: #2874f0;
+  color: white;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: inline-block;
+  border-bottom-right-radius: 8px;
+}
+
+.coupon-content {
+  padding: 20px;
+}
+
+.coupon-content h3 {
+  font-size: 1.2rem;
+  color: #212121;
+  margin-bottom: 15px;
+}
+
+.coupon-code {
+  background-color: #f5f5f5;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+}
+
+.coupon-discount {
+  color: #388e3c;
+  font-weight: 500;
+  font-size: 1.1rem;
+  margin-bottom: 15px;
+}
+
+.coupon-validity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.coupon-validity svg {
+  color: #2874f0;
+}
+
+.coupon-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.copy-btn {
+  background-color: #2874f0;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.copy-btn:hover {
+  background-color: #1a66d6;
+}
+
+.terms-link {
+  color: #2874f0;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.terms-link:hover {
+  text-decoration: underline;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .coupons-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .coupon-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .copy-btn {
+    width: 100%;
+  }
+  
+  .terms-link {
+    width: 100%;
+    text-align: center;
+  }
+}
