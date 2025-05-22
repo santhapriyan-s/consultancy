@@ -1,5 +1,8 @@
 import { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import axios from 'axios';
+import { API_BASE_URL } from '@/config/api';
+import React from 'react';
 
 const ProductContext = createContext();
 
@@ -28,9 +31,9 @@ const defaultUsers = [
   }
 ];
 
-export const ProductProvider = ({ children }) => {
+export const ProductProvider = ({ children, navigateCallback }) => {
   const { toast } = useToast();
-  const [products, setProducts] = useState(defaultProducts);
+  const [products, setProducts] = useState([]);
   const [allCarts, setAllCarts] = useState([]); // Store all user carts
   const [allFavorites, setAllFavorites] = useState([]); // Store all user favorites
   const [user, setUser] = useState(null);
@@ -52,6 +55,7 @@ export const ProductProvider = ({ children }) => {
     enableUpi: true,
     razorpayKey: "rzp_test_pYO1RxhwzDCppY"
   });
+  const [loading, setLoading] = useState(true);
 
   // Load data from localStorage
   useEffect(() => {
@@ -353,7 +357,7 @@ export const ProductProvider = ({ children }) => {
   }, [addresses, user]);
 
   // Add address - Updated to ensure it's properly saved and returned
-  const addAddress = useCallback((address) => {
+  const addUserAddress = useCallback((address) => {
     if (!user) {
       toast({
         title: "Please login first",
@@ -362,38 +366,37 @@ export const ProductProvider = ({ children }) => {
       });
       return null;
     }
-    
+
     // Check if this address is already saved (prevent duplicates)
-    const isDuplicate = addresses.some(
-      a => a.userId === user.id && 
-           a.street === address.street && 
-           a.city === address.city &&
-           a.pincode === address.pincode
+    const isDuplicate = addresses.some(a => 
+      a.userId === user.id && 
+      a.street === address.street && 
+      a.city === address.city && 
+      a.pincode === address.pincode
     );
-    
+
     if (isDuplicate) {
       // Return the existing address instead of creating a duplicate
-      const existingAddress = addresses.find(
-        a => a.userId === user.id && 
-             a.street === address.street && 
-             a.city === address.city &&
-             a.pincode === address.pincode
+      const existingAddress = addresses.find(a => 
+        a.userId === user.id && 
+        a.street === address.street && 
+        a.city === address.city && 
+        a.pincode === address.pincode
       );
       
       toast({
         title: "Address already saved",
         description: "This address is already in your profile",
       });
-      
       return existingAddress;
     }
-    
+
     const newAddress = {
       id: Date.now(),
       userId: user.id,
       ...address
     };
-    
+
     setAddresses(currentAddresses => [...currentAddresses, newAddress]);
     
     toast({
@@ -414,7 +417,6 @@ export const ProductProvider = ({ children }) => {
       });
       return;
     }
-
     setSavedPaymentMethods(current => {
       if (type === 'card') {
         // Check for duplicate cards (by last 4 digits)
@@ -422,7 +424,6 @@ export const ProductProvider = ({ children }) => {
         const isDuplicate = current.cards.some(
           card => card.userId === user.id && card.number.slice(-4) === lastFour
         );
-        
         if (isDuplicate) {
           toast({
             title: "Card already saved",
@@ -430,7 +431,6 @@ export const ProductProvider = ({ children }) => {
           });
           return current;
         }
-        
         return {
           ...current,
           cards: [...current.cards, { ...method, id: Date.now(), userId: user.id }]
@@ -440,7 +440,6 @@ export const ProductProvider = ({ children }) => {
         const isDuplicate = current.upi.some(
           upi => upi.userId === user.id && upi.upiId === method
         );
-        
         if (isDuplicate) {
           toast({
             title: "UPI already saved",
@@ -448,7 +447,6 @@ export const ProductProvider = ({ children }) => {
           });
           return current;
         }
-        
         return {
           ...current,
           upi: [...current.upi, { id: Date.now(), upiId: method, userId: user.id }]
@@ -456,7 +454,6 @@ export const ProductProvider = ({ children }) => {
       }
       return current;
     });
-    
     toast({
       title: "Payment method saved",
       description: `Your ${type} has been saved for future use.`,
@@ -466,7 +463,6 @@ export const ProductProvider = ({ children }) => {
   // Update to only remove user's own payment methods
   const removePaymentMethod = useCallback((type, id) => {
     if (!user) return;
-    
     setSavedPaymentMethods(current => {
       if (type === 'card') {
         return {
@@ -481,7 +477,6 @@ export const ProductProvider = ({ children }) => {
       }
       return current;
     });
-    
     toast({
       title: "Payment method removed",
       description: `Your ${type} has been removed.`,
@@ -499,7 +494,6 @@ export const ProductProvider = ({ children }) => {
           ...review,
           date: new Date().toISOString()
         };
-        
         return {
           ...product,
           reviews: [...product.reviews, newReview]
@@ -507,7 +501,6 @@ export const ProductProvider = ({ children }) => {
       }
       return product;
     });
-    
     setProducts(updatedProducts);
     toast({
       title: "Review added",
@@ -522,7 +515,6 @@ export const ProductProvider = ({ children }) => {
         const updatedReviews = product.reviews.map(review =>
           review.id === reviewId ? { ...review, ...updatedReview } : review
         );
-        
         return {
           ...product,
           reviews: updatedReviews
@@ -530,7 +522,6 @@ export const ProductProvider = ({ children }) => {
       }
       return product;
     });
-    
     setProducts(updatedProducts);
     toast({
       title: "Review updated",
@@ -539,19 +530,17 @@ export const ProductProvider = ({ children }) => {
   }, [products, toast]);
 
   // Place an order - Update to not clear cart after order
-  const placeOrder = useCallback((orderDetails, buyNowItems = null) => {
+  const placeOrder = useCallback(async (orderDetails, buyNowItems = null) => {
     const orderItems = buyNowItems || [...cart];
-    
     // Calculate total based on provided items
     const orderTotal = orderItems.reduce((sum, item) => {
       const itemPrice = item.price;
       const itemQuantity = item.quantity || 1; // Default to 1 if quantity is not specified
       return sum + (itemPrice * itemQuantity);
     }, 0);
-    
     // Calculate shipping
     const shipping = orderTotal >= 1000 ? 0 : 100;
-    
+
     const newOrder = {
       id: Date.now(),
       userId: user.id,
@@ -562,17 +551,24 @@ export const ProductProvider = ({ children }) => {
       date: new Date().toISOString(),
       ...orderDetails
     };
-    
     setOrders(currentOrders => [...currentOrders, newOrder]);
-    
     // Removed the code that clears the cart after placing an order
-    
     toast({
       title: "Order placed",
       description: "Your order has been placed successfully!",
     });
-    
-    return newOrder;
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post('http://localhost:5000/api/place-order', newOrder, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Refresh orders list after placing order
+      await fetchOrders();
+      return response.data;
+    } catch (error) {
+      console.error('Error placing order:', error);
+      throw error;
+    }
   }, [cart, toast, user]);
 
   // Calculate cart total
@@ -584,20 +580,18 @@ export const ProductProvider = ({ children }) => {
   const getCartItemCount = useCallback(() => {
     return cart.reduce((count, item) => count + item.quantity, 0);
   }, [cart]);
-  
+
   // Update store settings
   const updateStoreSettings = useCallback((newSettings) => {
     setStoreSettings(prevSettings => ({
       ...prevSettings,
-      ...newSettings
+      ...newSettings,
     }));
-    
     // Immediately save to localStorage for persistence
     localStorage.setItem('storeSettings', JSON.stringify({
       ...storeSettings,
-      ...newSettings
+      ...newSettings,
     }));
-    
     toast({
       title: "Store settings updated",
       description: "Your store settings have been updated successfully.",
@@ -614,7 +608,6 @@ export const ProductProvider = ({ children }) => {
       });
       return null;
     }
-    
     // Update current user
     const updatedUser = { 
       ...user, 
@@ -622,27 +615,407 @@ export const ProductProvider = ({ children }) => {
       // Ensure these critical fields are preserved
       id: user.id,
       dateJoined: user.dateJoined,
-      isAdmin: user.isAdmin
+      isAdmin: user.isAdmin,
     };
     setUser(updatedUser);
-    
     // Update in users list
     const updatedUsers = users.map(u => 
       u.id === user.id ? updatedUser : u
     );
     setUsers(updatedUsers);
-    
     toast({
       title: "Profile updated",
       description: "Your profile has been updated successfully.",
     });
-    
     // Save to local storage immediately
     localStorage.setItem('user', JSON.stringify(updatedUser));
     localStorage.setItem('users', JSON.stringify(updatedUsers));
-    
     return updatedUser;
   }, [user, users, toast]);
+
+  // Fetch orders
+  const fetchOrders = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      toast.error("Please login to view your orders");
+      handleUnauthorized();
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/orders`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setOrders(response.data);
+    } catch (error) {
+      if (error.response?.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        handleUnauthorized();
+      } else {
+        console.error("Error fetching orders:", error);
+        toast.error("Failed to fetch orders. Please try again.");
+      }
+    }
+  };
+
+  // Fetch addresses
+  const fetchAddresses = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      toast.error("Please login to view your addresses");
+      handleUnauthorized();
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/addresses`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setAddresses(response.data);
+    } catch (error) {
+      if (error.response?.status === 401) {
+        toast.error("Session expired. Please log in again.");
+        handleUnauthorized();
+      } else {
+        console.error("Error fetching addresses:", error);
+        toast.error("Failed to fetch addresses. Please try again.");
+      }
+    }
+  };
+
+  // Enhanced product management functions
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_BASE_URL}/api/products`);
+      console.log('Fetched products:', response.data); // Add debug logging
+      setProducts(response.data || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      // Fallback to default products on error
+      setProducts(defaultProducts);
+      toast({
+        title: "Error loading products",
+        description: "Using default product list",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getProductById = async (productId) => {
+    try {
+      // Check if productId is undefined or null
+      if (!productId || productId === "undefined" || productId === "null") {
+        console.error("Invalid product ID provided:", productId);
+        toast({
+          title: "Error",
+          description: "Invalid product ID",
+          variant: "destructive",
+        });
+        return null;
+      }
+      
+      // First check if product is already in local state
+      const localProduct = products.find(p => 
+        p.id?.toString() === productId?.toString() || 
+        p._id?.toString() === productId?.toString()
+      );
+      
+      if (localProduct) {
+        return localProduct;
+      }
+      
+      // If not found locally, fetch from API
+      setLoading(true);
+      console.log(`Attempting to fetch product with ID: ${productId}`);
+      
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/products/${productId}`);
+        
+        if (response.data) {
+          console.log(`Successfully fetched product:`, response.data);
+          
+          // Add the fetched product to local state
+          setProducts(currentProducts => {
+            const exists = currentProducts.some(p => 
+              p.id?.toString() === response.data.id?.toString() || 
+              p._id?.toString() === response.data._id?.toString()
+            );
+            
+            if (!exists) {
+              return [...currentProducts, response.data];
+            }
+            return currentProducts;
+          });
+          
+          return response.data;
+        }
+      } catch (fetchError) {
+        console.error(`Error fetching product ${productId}:`, fetchError);
+        
+        // If API fails, try to find a product in our default products
+        const fallbackProduct = defaultProducts.find(p => p.id?.toString() === productId?.toString());
+        
+        if (fallbackProduct) {
+          console.log(`Using fallback product from default list:`, fallbackProduct);
+          return fallbackProduct;
+        }
+      }
+      
+      toast({
+        title: "Product not found",
+        description: "The requested product could not be found",
+        variant: "destructive",
+      });
+      return null;
+    } catch (error) {
+      console.error('Error in getProductById:', error);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addProduct = async (productData) => {
+    try {
+      setLoading(true);
+      console.log('Adding product to:', `${API_BASE_URL}/api/admin/products`); // Add debug logging
+      console.log('Product data:', productData); // Log the data being sent
+      
+      const response = await axios.post(`${API_BASE_URL}/api/admin/products`, productData);
+      console.log('Product added response:', response.data); // Add debug logging
+      
+      // Refresh product list after adding
+      await fetchProducts();
+      toast({
+        title: "Product added",
+        description: "Product has been added successfully",
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error adding product:', error);
+      toast({
+        title: "Error adding product",
+        description: error.response?.data?.message || "Could not add the product",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateProduct = async (productId, productData) => {
+    try {
+      setLoading(true);
+      const response = await axios.put(`${API_BASE_URL}/api/admin/products/${productId}`, productData);
+      // Refresh product list after updating
+      await fetchProducts();
+      toast({
+        title: "Product updated",
+        description: "Product has been updated successfully",
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error updating product:', error);
+      toast({
+        title: "Error updating product",
+        description: error.response?.data?.message || "Could not update the product",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteProduct = async (productId) => {
+    try {
+      setLoading(true);
+      await axios.delete(`${API_BASE_URL}/api/admin/products/${productId}`);
+      // Refresh product list after deleting
+      await fetchProducts();
+      toast({
+        title: "Product deleted",
+        description: "Product has been removed successfully",
+      });
+      return true;
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      toast({
+        title: "Error deleting product",
+        description: error.response?.data?.message || "Could not delete the product",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAddressesLocal = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await axios.get('http://localhost:5000/api/addresses', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAddresses(response.data);
+    } catch (error) {
+      console.error('Error fetching addresses:', error);
+    }
+  };
+
+  const addAddress = async (addressData) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/addresses`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(addressData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add address');
+      }
+
+      const newAddress = await response.json();
+      setAddresses((prevAddresses) => [...prevAddresses, newAddress]);
+
+      toast({
+        title: "Success",
+        description: "Address added successfully.",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('Error adding address:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add address.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Helper method to get product details for navigation
+  const prepareProductDetailNavigation = useCallback((productId) => {
+    const product = products.find(p => 
+      p.id?.toString() === productId?.toString() || 
+      p._id?.toString() === productId?.toString()
+    );
+    return product || null;
+  }, [products]);
+
+  // Helper method to prepare checkout navigation data
+  const prepareCheckoutNavigation = useCallback((productId, quantity = 1, buyNow = true) => {
+    if (!productId) {
+      console.error("Invalid product ID for checkout:", productId);
+      toast({
+        title: "Invalid product",
+        description: "Cannot find the product information",
+        variant: "destructive",
+      });
+      return null;
+    }
+  
+    console.log(`Preparing checkout for product ID: ${productId}, quantity: ${quantity}`);
+    
+    // First try to find the product using MongoDB _id or regular id
+    const product = products.find(p => {
+      if (!p) return false;
+      
+      const productIdStr = productId?.toString() || '';
+      const pIdStr = p.id?.toString() || '';
+      const pMongoIdStr = p._id?.toString() || '';
+      
+      return pIdStr === productIdStr || pMongoIdStr === productIdStr;
+    });
+    
+    if (!product) {
+      console.error(`Product not found for checkout. ID: ${productId}`, 
+        { searchId: productId, availableProducts: products.map(p => ({ id: p.id, _id: p._id })) });
+      
+      toast({
+        title: "Product not found",
+        description: "Unable to find the requested product",
+        variant: "destructive",
+      });
+      return null;
+    }
+  
+    console.log(`Found product for checkout:`, product);
+    
+    // Create a clean copy of the product with quantity
+    const checkoutProduct = {
+      ...product,
+      quantity: quantity
+    };
+    
+    return {
+      buyNow,
+      product: checkoutProduct
+    };
+  }, [products, toast]);
+
+  // Clear cart function
+  const clearCart = useCallback(() => {
+    if (!user) return;
+    
+    setAllCarts(currentAllCarts => {
+      const userCartIndex = currentAllCarts.findIndex(cart => cart.userId === user.id);
+      
+      if (userCartIndex >= 0) {
+        return [
+          ...currentAllCarts.slice(0, userCartIndex),
+          { ...currentAllCarts[userCartIndex], items: [] },
+          ...currentAllCarts.slice(userCartIndex + 1)
+        ];
+      }
+      return currentAllCarts;
+    });
+    
+    toast({
+      title: "Cart cleared",
+      description: "All items have been removed from your cart.",
+    });
+  }, [user, toast]);
+
+  // Navigation handler for unauthorized access
+  const handleUnauthorized = () => {
+    if (navigateCallback) {
+      navigateCallback("/login");
+    } else {
+      console.error("Navigation callback is not provided.");
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchOrders();
+    } else {
+      setOrders([]); // Clear orders when user logs out
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchAddresses();
+    } else {
+      setAddresses([]);
+    }
+  }, [isLoggedIn]);
 
   const contextValue = {
     products,
@@ -675,7 +1048,20 @@ export const ProductProvider = ({ children }) => {
     savePaymentMethod,
     removePaymentMethod,
     updateStoreSettings,
-    updateUserProfile
+    updateUserProfile,
+    fetchOrders, // Add this
+    fetchProducts,
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    getProductById,
+    loading,
+    addresses,
+    fetchAddresses, // keep the main fetchAddresses for context consumers
+    prepareProductDetailNavigation,
+    prepareCheckoutNavigation,
+    clearCart,
+    fetchAddressesLocal // optionally export the local version if needed
   };
 
   return (
@@ -692,3 +1078,4 @@ export const useProduct = () => {
   }
   return context;
 };
+

@@ -1,36 +1,55 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { useProduct } from '@/context/ProductContext';
 import { Button } from '@/components/ui/button';
 import { Package, ArrowLeft, Check } from 'lucide-react';
+import axios from 'axios';
 
 const OrderDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { orders, user } = useProduct();
+  const { user, fetchOrders } = useProduct(); // Add fetchOrders
   const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    if (orders.length > 0) {
-      const foundOrder = orders.find(o => o.id.toString() === id);
-      setOrder(foundOrder);
+    const fetchOrder = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get(`http://localhost:5000/api/orders/${id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setOrder(response.data);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching order:', err);
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchOrder();
     }
     
     // Show success message if navigated from checkout
     if (location.state?.newOrder) {
       setShowSuccess(true);
-      
-      // Hide success message after 5 seconds
-      const timer = setTimeout(() => {
-        setShowSuccess(false);
-      }, 5000);
-      
+      const timer = setTimeout(() => setShowSuccess(false), 5000);
       return () => clearTimeout(timer);
     }
-  }, [id, orders, location.state]);
+  }, [id, location.state]);
+
+  if (loading) {
+    return <div className="container mx-auto px-4 py-8">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="container mx-auto px-4 py-8">Error: {error}</div>;
+  }
 
   if (!order) {
     return (
@@ -46,6 +65,11 @@ const OrderDetail = () => {
     );
   }
 
+  const handleBackToOrders = () => {
+    fetchOrders(); // Fetch latest orders before navigating
+    navigate('/profile');
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       {showSuccess && (
@@ -60,7 +84,7 @@ const OrderDetail = () => {
       
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Order Details</h1>
-        <Button variant="outline" onClick={() => navigate('/profile')}>
+        <Button variant="outline" onClick={handleBackToOrders}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to My Orders
         </Button>
@@ -129,7 +153,26 @@ const OrderDetail = () => {
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-6">Order Summary</h2>
             
-            
+            <div className="space-y-4">
+              <div className="flex justify-between border-b pb-4">
+                <span className="text-gray-600">Subtotal</span>
+                <span className="font-semibold">₹{order.total.toFixed(2)}</span>
+              </div>
+              
+              <div className="flex justify-between border-b pb-4">
+                <span className="text-gray-600">Shipping</span>
+                <span className="font-semibold">
+                  {order.total >= 1000 ? 'Free' : '₹100.00'}
+                </span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-lg font-bold">Total</span>
+                <span className="text-lg font-bold">
+                  ₹{(order.total + (order.total >= 1000 ? 0 : 100)).toFixed(2)}
+                </span>
+              </div>
+            </div>
             
             <div className="mt-6 pt-6 border-t">
               <h3 className="font-semibold mb-3">Shipping Information</h3>

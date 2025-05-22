@@ -1,9 +1,8 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { useProduct } from '@/context/ProductContext';
 import { 
-  Package, User, MapPin, Gift, CreditCard, Star, Tag, Heart, LogOut, AlertCircle, Plus, Trash2
+  Package, User, MapPin, Gift, CreditCard, Star, Tag, Heart, LogOut, AlertCircle, Plus, Trash2, ShoppingCart
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from 'react-hot-toast';
+import { API_BASE_URL } from '@/config/api'; // Add this import
+import axios from 'axios';
 
 const Profile = () => {
   const { section } = useParams();
@@ -25,17 +27,23 @@ const Profile = () => {
     isLoggedIn, 
     user, 
     logout, 
-    orders, 
-    addresses, 
-    addAddress, 
-    favorites,
-    products, 
-    savedPaymentMethods, 
-    savePaymentMethod, 
-    removePaymentMethod 
+    orders: contextOrders,
+    loading: contextLoading,
+    fetchOrders: contextFetchOrders,
+    products = [], // Add default empty array
+    addresses = [], // Add default empty array
+    addAddress,
+    fetchAddresses, // Add this
+    addToCart, // Add this to access the addToCart function
   } = useProduct();
   
-  // These states are for the form inputs
+  // Add state variables for direct API fetching
+  const [orders, setOrders] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // Form states
   const [newAddress, setNewAddress] = useState({
     name: '',
     phone: '',
@@ -47,12 +55,20 @@ const Profile = () => {
   const [isAddressDialogOpen, setIsAddressDialogOpen] = useState(false);
   const [isUpiDialogOpen, setIsUpiDialogOpen] = useState(false);
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [newUpi, setNewUpi] = useState('');
   const [newCard, setNewCard] = useState({
     cardNumber: '',
     cardName: '',
     expiry: '',
     cvv: ''
+  });
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    gender: '',
+    dob: ''
   });
 
   // Redirect to login if not logged in
@@ -62,52 +78,149 @@ const Profile = () => {
 
   // Handle tab selection
   const selectedTab = section || 'orders';
-
-  // Get user-specific payment methods
-  const userPaymentMethods = {
-    cards: savedPaymentMethods.cards ? savedPaymentMethods.cards.filter(card => card.userId === user.id) : [],
-    upi: savedPaymentMethods.upi ? savedPaymentMethods.upi.filter(upi => upi.userId === user.id) : []
-  };
-
-  const handleAddressSubmit = (e) => {
-    e.preventDefault();
-    addAddress(newAddress);
-    setNewAddress({
-      name: '',
-      phone: '',
-      street: '',
-      city: '',
-      state: '',
-      pincode: ''
-    });
-    setIsAddressDialogOpen(false);
-  };
-
-  const handleUpiSubmit = (e) => {
-    e.preventDefault();
-    if (newUpi.trim()) {
-      savePaymentMethod('upi', newUpi);
-      setNewUpi('');
-      setIsUpiDialogOpen(false);
+  
+  // Function to fetch orders directly from API
+  const fetchUserOrders = async () => {
+    if (!isLoggedIn) return;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await fetch(`${API_BASE_URL}/api/orders/user`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch orders');
+      }
+      
+      const data = await response.json();
+      
+      // Ensure we don't have duplicates by using a Map with order ID as key
+      const uniqueOrders = new Map();
+      data.forEach(order => {
+        const orderId = order._id || order.id;
+        if (!uniqueOrders.has(orderId)) {
+          uniqueOrders.set(orderId, order);
+        }
+      });
+      
+      setOrders(Array.from(uniqueOrders.values()));
+      console.log(`Received ${data.length} orders, displaying ${uniqueOrders.size} unique orders`);
+      
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+      setError(err.message || 'Error fetching orders');
+      toast.error('Failed to load orders. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleCardSubmit = (e) => {
-    e.preventDefault();
-    if (newCard.cardNumber && newCard.cardName && newCard.expiry) {
-      savePaymentMethod('card', newCard);
-      setNewCard({
-        cardNumber: '',
-        cardName: '',
-        expiry: '',
-        cvv: ''
+  // Fetch favorites function
+  const fetchFavorites = async () => {
+    if (!isLoggedIn) return;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Ensure we're using /api/favorites endpoint
+      const response = await axios.get(`${API_BASE_URL}/api/favorites`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
       });
-      setIsCardDialogOpen(false);
+      
+      console.log('Favorites fetched:', response.data);
+      setFavorites(response.data);
+    } catch (err) {
+      console.error('Failed to fetch favorites:', err);
+      setError('Failed to load favorites. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Updated useEffect to fetch favorites too
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchUserOrders();
+      fetchAddresses();
+      fetchFavorites();
+    }
+  }, [isLoggedIn]);
+
+  const handleAddressSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await addAddress(newAddress);
+      setNewAddress({
+        name: '',
+        phone: '',
+        street: '',
+        city: '',
+        state: '',
+        pincode: ''
+      });
+      setIsAddressDialogOpen(false);
+      toast.success('Address added successfully');
+    } catch (error) {
+      toast.error('Failed to add address');
+      console.error('Add address error:', error);
+    }
+  };
+
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+    try {
+      await updateUserProfile(editFormData);
+      setIsEditDialogOpen(false);
+      toast.success('Profile updated successfully');
+    } catch (error) {
+      toast.error('Failed to update profile');
+      console.error('Profile update error:', error);
     }
   };
 
   const handleRemovePaymentMethod = (type, id) => {
     removePaymentMethod(type, id);
+    toast.success('Payment method removed');
+  };
+
+  // Handle remove from favorites
+  const handleRemoveFavorite = async (productId) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Session expired. Please log in again.');
+        return <Navigate to="/login" />;
+      }
+
+      await axios.delete(`${API_BASE_URL}/api/favorites/${productId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      setFavorites(favorites.filter(fav => 
+        (fav.productId._id || fav.productId.id) !== productId
+      ));
+
+      toast.success('Removed from favorites');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        return <Navigate to="/login" />;
+      }
+      console.error('Failed to remove favorite:', error);
+      toast.error('Failed to remove from favorites');
+    }
   };
 
   // Define sidebar links
@@ -115,21 +228,20 @@ const Profile = () => {
     { id: 'orders', label: 'My Orders', icon: <Package className="h-5 w-5 mr-2" /> },
     { id: 'info', label: 'Profile Information', icon: <User className="h-5 w-5 mr-2" /> },
     { id: 'addresses', label: 'Manage Addresses', icon: <MapPin className="h-5 w-5 mr-2" /> },
+    { id: 'wishlist', label: 'My Wishlist', icon: <Heart className="h-5 w-5 mr-2" /> }, // Added wishlist section
     { id: 'gift-cards', label: 'Gift Cards', icon: <Gift className="h-5 w-5 mr-2" /> },
-    { id: 'upi', label: 'Saved UPI', icon: <CreditCard className="h-5 w-5 mr-2" /> },
-    { id: 'cards', label: 'Saved Cards', icon: <CreditCard className="h-5 w-5 mr-2" /> },
     { id: 'reviews', label: 'My Reviews & Ratings', icon: <Star className="h-5 w-5 mr-2" /> },
     { id: 'coupons', label: 'My Coupons', icon: <Tag className="h-5 w-5 mr-2" /> }
   ];
 
   // Get user-specific reviews
-  const userReviews = products
+  const userReviews = user && products ? products
     .filter(product => product.reviews && product.reviews.some(review => review.userId === user.id))
-    .flatMap(product => 
-      product.reviews
-        .filter(review => review.userId === user.id)
-        .map(review => ({ ...review, product }))
-    );
+    .map(product => {
+      const userReview = product.reviews.find(review => review.userId === user.id);
+      return userReview ? { product, review: userReview } : null; // Ensure only valid reviews are included
+    })
+    .filter(Boolean) : []; // Remove null entries
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -161,14 +273,6 @@ const Profile = () => {
                 </Link>
               ))}
               
-              <Link
-                to="/favorites"
-                className="flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
-              >
-                <Heart className="h-5 w-5 mr-2" />
-                My Wishlist
-              </Link>
-              
               <button
                 onClick={logout}
                 className="flex items-center px-3 py-2 rounded-md text-sm font-medium text-red-500 hover:bg-red-50 w-full text-left"
@@ -186,15 +290,39 @@ const Profile = () => {
             {selectedTab === 'orders' && (
               <div>
                 <h2 className="text-2xl font-bold mb-6">My Orders</h2>
-                {orders.length > 0 ? (
+
+                {/* Add refresh button for orders */}
+                <div className="mb-6 flex justify-end">
+                  <Button 
+                    variant="outline" 
+                    onClick={fetchUserOrders} 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Refreshing..." : "Refresh Orders"}
+                  </Button>
+                </div>
+                
+                {/* Error message display */}
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md mb-6 flex items-center">
+                    <AlertCircle className="h-5 w-5 mr-2" />
+                    {error}
+                  </div>
+                )}
+                
+                {isLoading ? (
+                  <div className="text-center py-12">
+                    <span className="text-gray-500">Loading orders...</span>
+                  </div>
+                ) : orders && orders.length > 0 ? (
                   <div className="space-y-6">
                     {orders.map((order) => (
-                      <div key={order.id} className="border rounded-lg overflow-hidden">
+                      <div key={order._id || order.id} className="border rounded-lg overflow-hidden">
                         <div className="bg-gray-50 p-4 flex justify-between items-center">
                           <div>
-                            <div className="text-sm text-gray-500">Order #{order.id}</div>
+                            <div className="text-sm text-gray-500">Order #{order._id || order.id}</div>
                             <div className="text-sm text-gray-500">
-                              Placed on {new Date(order.date).toLocaleDateString()}
+                              Placed on {new Date(order.date || order.createdAt).toLocaleDateString()}
                             </div>
                           </div>
                           <div className={`
@@ -212,7 +340,7 @@ const Profile = () => {
                         <div className="p-4">
                           <div className="space-y-4">
                             {order.items.map((item) => (
-                              <div key={item.id} className="flex items-center">
+                              <div key={item._id || item.id} className="flex items-center">
                                 <div className="w-12 h-12 flex-shrink-0 mr-4 bg-gray-100 rounded">
                                   <img 
                                     src={item.image} 
@@ -225,7 +353,7 @@ const Profile = () => {
                                   />
                                 </div>
                                 <div className="flex-1">
-                                  <Link to={`/products/${item.id}`} className="text-sm font-medium hover:text-srblue transition-colors">
+                                  <Link to={`/products/${item.productId}`} className="text-sm font-medium hover:text-srblue transition-colors">
                                     {item.name}
                                   </Link>
                                   <div className="text-sm text-gray-500">
@@ -243,7 +371,7 @@ const Profile = () => {
                             <div className="text-xl font-bold">
                               Total: ₹{order.total.toFixed(2)}
                             </div>
-                            <Link to={`/order/${order.id}`}>
+                            <Link to={`/order/${order._id || order.id}`}>
                               <Button variant="outline">
                                 View Details
                               </Button>
@@ -274,24 +402,64 @@ const Profile = () => {
               <div>
                 <h2 className="text-2xl font-bold mb-6">Profile Information</h2>
                 <div className="max-w-md mx-auto">
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-3 gap-4 items-center">
                       <div className="text-gray-500">Full Name</div>
-                      <div className="col-span-2 font-medium">{user?.name || 'Not provided'}</div>
+                      <div className="col-span-2 font-medium">
+                        {user?.name || 'Not provided'}
+                      </div>
                     </div>
                     
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-3 gap-4 items-center">
                       <div className="text-gray-500">Email</div>
-                      <div className="col-span-2 font-medium">{user?.email || 'Not provided'}</div>
+                      <div className="col-span-2 font-medium">
+                        {user?.email || 'Not provided'}
+                      </div>
                     </div>
                     
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-3 gap-4 items-center">
                       <div className="text-gray-500">Phone</div>
-                      <div className="col-span-2 font-medium">{user?.phone || 'Not provided'}</div>
+                      <div className="col-span-2 font-medium">
+                        {user?.phone || 'Not provided'}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4 items-center">
+                      <div className="text-gray-500">Gender</div>
+                      <div className="col-span-2 font-medium">
+                        {user?.gender || 'Not specified'}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4 items-center">
+                      <div className="text-gray-500">Date of Birth</div>
+                      <div className="col-span-2 font-medium">
+                        {user?.dob ? new Date(user.dob).toLocaleDateString() : 'Not specified'}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4 items-center">
+                      <div className="text-gray-500">Joined Date</div>
+                      <div className="col-span-2 font-medium">
+                        {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                      </div>
                     </div>
                     
                     <div className="pt-4">
-                      <Button variant="outline" className="w-full">
+                      <Button 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={() => {
+                          setEditFormData({
+                            name: user?.name || '',
+                            email: user?.email || '',
+                            phone: user?.phone || '',
+                            gender: user?.gender || '',
+                            dob: user?.dob || ''
+                          });
+                          setIsEditDialogOpen(true);
+                        }}
+                      >
                         Edit Profile
                       </Button>
                     </div>
@@ -378,107 +546,20 @@ const Profile = () => {
               </div>
             )}
 
-            {selectedTab === 'upi' && (
-              <div>
-                <h2 className="text-2xl font-bold mb-6">Saved UPI IDs</h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {userPaymentMethods.upi && userPaymentMethods.upi.length > 0 ? (
-                    userPaymentMethods.upi.map(upi => (
-                      <div key={upi.id} className="border rounded-lg p-4 relative">
-                        <div className="font-semibold mb-1 flex items-center">
-                          <span className="bg-blue-100 text-blue-800 p-1 rounded mr-2">UPI</span>
-                          {upi.upiId}
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="absolute top-2 right-2 h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => handleRemovePaymentMethod('upi', upi.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="col-span-2 text-center py-8">
-                      <p className="text-gray-500 mb-4">You don't have any UPI IDs saved yet.</p>
-                    </div>
-                  )}
-                  
-                  <div className="col-span-1">
-                    <Button 
-                      variant="outline" 
-                      className="w-full h-16 flex items-center justify-center"
-                      onClick={() => setIsUpiDialogOpen(true)}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add New UPI ID
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {selectedTab === 'cards' && (
-              <div>
-                <h2 className="text-2xl font-bold mb-6">Saved Payment Cards</h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {userPaymentMethods.cards && userPaymentMethods.cards.length > 0 ? (
-                    userPaymentMethods.cards.map(card => (
-                      <div key={card.id} className="border rounded-lg p-4 relative bg-gradient-to-r from-gray-100 to-gray-200">
-                        <div className="font-semibold mb-2">{card.cardName}</div>
-                        <div className="font-mono mb-2">
-                          •••• •••• •••• {card.cardNumber && card.cardNumber.slice(-4)}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          Expires: {card.expiry}
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="absolute top-2 right-2 h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => handleRemovePaymentMethod('card', card.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="col-span-2 text-center py-8">
-                      <p className="text-gray-500 mb-4">You don't have any cards saved yet.</p>
-                    </div>
-                  )}
-                  
-                  <div className="col-span-1">
-                    <Button 
-                      variant="outline" 
-                      className="w-full h-16 flex items-center justify-center"
-                      onClick={() => setIsCardDialogOpen(true)}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add New Card
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {selectedTab === 'reviews' && (
               <div>
                 <h2 className="text-2xl font-bold mb-6">My Reviews & Ratings</h2>
                 
                 {userReviews.length > 0 ? (
                   <div className="space-y-6">
-                    {userReviews.map(review => (
+                    {userReviews.map(({ product, review }) => (
                       <div key={review.id} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center">
                             <div className="w-12 h-12 flex-shrink-0 mr-4 bg-gray-100 rounded">
                               <img 
-                                src={review.product.image} 
-                                alt={review.product.name}
+                                src={product.image} 
+                                alt={product.name}
                                 className="w-full h-full object-cover rounded"
                                 onError={(e) => {
                                   e.target.onerror = null;
@@ -487,8 +568,8 @@ const Profile = () => {
                               />
                             </div>
                             <div>
-                              <Link to={`/products/${review.product.id}`} className="font-medium hover:text-srblue transition-colors">
-                                {review.product.name}
+                              <Link to={`/products/${product.id}`} className="font-medium hover:text-srblue transition-colors">
+                                {product.name}
                               </Link>
                               <div className="flex items-center mt-1">
                                 {[1, 2, 3, 4, 5].map((star) => (
@@ -509,7 +590,7 @@ const Profile = () => {
                         <p className="text-gray-700">{review.comment}</p>
                         
                         <div className="mt-4 flex justify-end">
-                          <Link to={`/products/${review.product.id}`}>
+                          <Link to={`/products/${product.id}`}>
                             <Button variant="outline" size="sm">
                               Edit Review
                             </Button>
@@ -562,6 +643,78 @@ const Profile = () => {
                     </Button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {selectedTab === 'wishlist' && (
+              <div>
+                <h2 className="text-2xl font-bold mb-6">My Wishlist</h2>
+                {favorites && favorites.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    {favorites.map((favorite) => {
+                      const product = favorite.productId || favorite; // Handle both direct product objects and nested productId objects
+                      const productId = product._id || product.id;
+
+                      return (
+                        <div key={productId} className="product-card bg-white rounded-lg overflow-hidden shadow-md">
+                          <Link to={`/products/${productId}`}>
+                                         <div className="h-48 overflow-hidden">
+                                           <img 
+                                             src={product.image || 'https://placehold.co/400x300/e2e8f0/1e293b?text=No+Image'} 
+                                             alt={product.name || 'Product Image'} 
+                                             className="w-full h-full object-cover transition-transform hover:scale-105"
+                                             onError={(e) => {
+                                               e.target.onerror = null;
+                                               e.target.src = 'https://placehold.co/400x300/e2e8f0/1e293b?text=No+Image';
+                                             }}
+                                           />
+                                         </div>
+                                       </Link>
+                          
+                          <div className="p-4">
+                            <Link to={`/products/${productId}`}>
+                              <h3 className="text-lg font-semibold mb-2 hover:text-srblue transition-colors">{product.name}</h3>
+                            </Link>
+                            <p className="text-gray-600 text-sm mb-3 capitalize">{product.category}</p>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xl font-bold">₹{product.price.toFixed(2)}</span>
+                              <div className="flex space-x-2">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={() => handleRemoveFavorite(productId)}
+                                  className="text-red-500 border-red-500"
+                                >
+                                  <Heart className="h-4 w-4 fill-current text-red-500" />
+                                </Button>
+                                
+                                <Button
+                                  size="icon"
+                                  onClick={() => addToCart(product)}
+                                >
+                                  <ShoppingCart className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Heart className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-xl font-medium mb-2">No items in your wishlist</h3>
+                    <p className="text-gray-500 mb-6">
+                      Products you add to your wishlist will appear here.
+                    </p>
+                    <Link to="/products">
+                      <Button className="bg-srblue hover:bg-blue-700">
+                        Browse Products
+                      </Button>
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
           </Card>
@@ -660,110 +813,90 @@ const Profile = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Add UPI Dialog */}
-      <Dialog open={isUpiDialogOpen} onOpenChange={setIsUpiDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Add UPI ID</DialogTitle>
-            <DialogDescription>
-              Enter your UPI ID to save it for future payments.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <form onSubmit={handleUpiSubmit}>
-            <div className="grid gap-4 py-4">
-              <div>
-                <Label htmlFor="upiId">UPI ID</Label>
-                <Input
-                  id="upiId"
-                  value={newUpi}
-                  onChange={(e) => setNewUpi(e.target.value)}
-                  placeholder="yourname@upi"
-                  required
-                />
-              </div>
-            </div>
-            
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsUpiDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-srblue hover:bg-blue-700">
-                Save UPI ID
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Card Dialog */}
-      <Dialog open={isCardDialogOpen} onOpenChange={setIsCardDialogOpen}>
+      {/* Edit Profile Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Payment Card</DialogTitle>
+            <DialogTitle>Edit Profile Information</DialogTitle>
             <DialogDescription>
-              Enter your card details to save for future payments.
+              Update your personal details below.
             </DialogDescription>
           </DialogHeader>
           
-          <form onSubmit={handleCardSubmit}>
+          <form onSubmit={handleProfileUpdate}>
             <div className="grid gap-4 py-4">
               <div>
-                <Label htmlFor="cardNumber">Card Number</Label>
+                <Label htmlFor="edit-name">Full Name</Label>
                 <Input
-                  id="cardNumber"
-                  value={newCard.cardNumber}
-                  onChange={(e) => setNewCard({...newCard, cardNumber: e.target.value})}
-                  placeholder="1234 5678 9012 3456"
-                  maxLength={19}
+                  id="edit-name"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                  placeholder="Enter your full name"
                   required
                 />
               </div>
               
               <div>
-                <Label htmlFor="cardName">Name on Card</Label>
+                <Label htmlFor="edit-email">Email</Label>
                 <Input
-                  id="cardName"
-                  value={newCard.cardName}
-                  onChange={(e) => setNewCard({...newCard, cardName: e.target.value})}
-                  placeholder="John Doe"
+                  id="edit-email"
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({...editFormData, email: e.target.value})}
+                  placeholder="Enter your email"
                   required
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="edit-phone">Phone Number</Label>
+                <Input
+                  id="edit-phone"
+                  value={editFormData.phone}
+                  onChange={(e) => setEditFormData({...editFormData, phone: e.target.value})}
+                  placeholder="Enter your phone number"
                 />
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="expiry">Expiry Date</Label>
-                  <Input
-                    id="expiry"
-                    value={newCard.expiry}
-                    onChange={(e) => setNewCard({...newCard, expiry: e.target.value})}
-                    placeholder="MM/YY"
-                    maxLength={5}
-                    required
-                  />
+                  <Label htmlFor="edit-gender">Gender</Label>
+                  <select
+                    id="edit-gender"
+                    value={editFormData.gender}
+                    onChange={(e) => setEditFormData({...editFormData, gender: e.target.value})}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">Select</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
                 </div>
+                
                 <div>
-                  <Label htmlFor="cvv">CVV</Label>
+                  <Label htmlFor="edit-dob">Date of Birth</Label>
                   <Input
-                    id="cvv"
-                    type="password"
-                    value={newCard.cvv}
-                    onChange={(e) => setNewCard({...newCard, cvv: e.target.value})}
-                    placeholder="•••"
-                    maxLength={3}
-                    required
+                    id="edit-dob"
+                    type="date"
+                    value={editFormData.dob}
+                    onChange={(e) => setEditFormData({...editFormData, dob: e.target.value})}
                   />
                 </div>
               </div>
             </div>
             
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsCardDialogOpen(false)}>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setIsEditDialogOpen(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" className="bg-srblue hover:bg-blue-700">
-                Save Card
+                Save Changes
               </Button>
             </DialogFooter>
           </form>

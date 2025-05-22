@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProduct } from '@/context/ProductContext';
@@ -17,6 +16,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Heart, ShoppingCart, ArrowRight, Star, Edit, Truck, Shield } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import VoiceSearch from '@/components/VoiceSearch';
+import axios from 'axios';
+import { API_BASE_URL } from '@/config/api';
+import cartService from '@/services/cartService';
 
 const ProductDetail = () => {
   const navigate = useNavigate();
@@ -33,8 +35,15 @@ const ProductDetail = () => {
     updateReview, 
     currentReview, 
     setCurrentReview,
-    storeSettings 
+    storeSettings,
+    prepareCheckoutNavigation,
+    getProductById
   } = useProduct();
+  
+  // Add state for direct favorite management
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+
   const [quantity, setQuantity] = useState(1);
   const [product, setProduct] = useState(null);
   const [isEditingReview, setIsEditingReview] = useState(false);
@@ -44,12 +53,155 @@ const ProductDetail = () => {
   const [comment, setComment] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    if (products.length > 0) {
-      const foundProduct = products.find(p => p.id === parseInt(id));
-      setProduct(foundProduct);
+  // Check favorite status directly from API
+  const checkFavoriteStatus = async (productId) => {
+    if (!isLoggedIn || !productId) return;
+    
+    try {
+      setFavoriteLoading(true);
+      const token = localStorage.getItem('token');
+      
+      const response = await axios.get(`${API_BASE_URL}/api/favorites/check/${productId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      setIsFavorite(response.data.isFavorite);
+      console.log(`Product ${productId} favorite status:`, response.data.isFavorite);
+    } catch (error) {
+      console.error('Error checking favorite status:', error);
+    } finally {
+      setFavoriteLoading(false);
     }
-  }, [products, id]);
+  };
+
+  // Handle toggling favorite directly with API
+  const handleToggleFavorite = async (productId) => {
+    if (!isLoggedIn) {
+      toast({
+        title: "Login Required",
+        description: "Please log in to add favorites",
+        variant: "default",
+      });
+      navigate('/login', { state: { from: `/products/${id}` } });
+      return;
+    }
+    
+    try {
+      setFavoriteLoading(true);
+      const token = localStorage.getItem('token');
+      
+      if (isFavorite) {
+        // Remove from favorites
+        await axios.delete(`${API_BASE_URL}/api/favorites/${productId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        setIsFavorite(false);
+        toast({
+          title: "Success",
+          description: "Removed from favorites",
+        });
+      } else {
+        // Add to favorites
+        await axios.post(`${API_BASE_URL}/api/favorites`, {
+          productId
+        }, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        setIsFavorite(true);
+        toast({
+          title: "Success",
+          description: "Added to favorites",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating favorite:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update favorites",
+        variant: "destructive",
+      });
+    } finally {
+      setFavoriteLoading(false);
+    }
+  };
+
+  // Updated useEffect to handle missing product ID and check favorite status
+  useEffect(() => {
+    const loadProduct = async () => {
+      try {
+        setProduct(null); // Clear current product while loading
+        
+        if (!id) {
+          console.error("Product ID is missing");
+          toast({
+            title: "Error",
+            description: "Product information is missing",
+            variant: "destructive",
+          });
+          navigate('/products');
+          return;
+        }
+        
+        if (products.length > 0) {
+          // Try to find the product in local state using multiple ID formats
+          const foundProduct = products.find(p => 
+            p.id?.toString() === id?.toString() || 
+            p._id?.toString() === id?.toString()
+          );
+          
+          if (foundProduct) {
+            console.log("Found product in local state:", foundProduct);
+            setProduct(foundProduct);
+            return;
+          }
+        }
+        
+        // If not found in local state or products not yet loaded, fetch from API
+        console.log(`Product not found in local state, fetching ID: ${id}`);
+        const fetchedProduct = await getProductById(id);
+        
+        if (fetchedProduct) {
+          setProduct(fetchedProduct);
+        } else {
+          // Handle case where product couldn't be loaded
+          toast({
+            title: "Product Not Found",
+            description: "We couldn't find the product you're looking for.",
+            variant: "destructive",
+          });
+          navigate('/products'); // Redirect to products page
+        }
+      } catch (error) {
+        console.error("Error loading product:", error);
+        navigate('/products');
+        toast({
+          title: "Error",
+          description: "Something went wrong while loading the product.",
+          variant: "destructive",
+        });
+      }
+    };
+
+    if (id) {
+      loadProduct();
+    } else {
+      navigate('/products');
+    }
+  }, [id, getProductById, products, navigate, toast]);
+
+  // Check favorite status whenever product or login state changes
+  useEffect(() => {
+    if (product && isLoggedIn) {
+      const productId = product._id || product.id;
+      checkFavoriteStatus(productId);
+    }
+  }, [product, isLoggedIn]);
 
   useEffect(() => {
     if (searchTerm && products.length > 0) {
@@ -73,10 +225,12 @@ const ProductDetail = () => {
     }
   }, [searchTerm, products, navigate, toast]);
 
+  // Update the loading state to be more informative
   if (!product) {
     return (
       <div className="container mx-auto px-4 py-16 text-center">
         <h2 className="text-2xl font-bold mb-4">Loading product...</h2>
+        <p className="text-gray-500">Please wait while we fetch the product details</p>
       </div>
     );
   }
@@ -86,14 +240,44 @@ const ProductDetail = () => {
     setQuantity(Math.max(1, value));
   };
 
-  const handleAddToCart = () => {
-    for (let i = 0; i < quantity; i++) {
-      addToCart(product);
+  const handleAddToCart = async () => {
+    try {
+      // Add to local context first for immediate feedback
+      for (let i = 0; i < quantity; i++) {
+        addToCart(product);
+      }
+      
+      // If logged in, also add to server cart
+      if (isLoggedIn) {
+        try {
+          await cartService.addToCart(product, quantity);
+          console.log(`Added ${quantity} ${product.name} to server cart`);
+        } catch (error) {
+          console.error('Error adding to server cart:', error);
+        }
+      }
+      
+      toast({
+        title: "Added to Cart",
+        description: `${quantity} × ${product.name} added to your cart`,
+      });
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add item to cart",
+        variant: "destructive",
+      });
     }
   };
 
   const handleBuyNow = () => {
     if (!isLoggedIn) {
+      toast({
+        title: "Login Required",
+        description: "Please log in to continue with checkout",
+        variant: "default",
+      });
       navigate('/login', { state: { from: `/products/${id}` } });
       return;
     }
@@ -113,15 +297,21 @@ const ProductDetail = () => {
       return;
     }
     
-    // Create a product object with the specified quantity for direct checkout
-    const productWithQuantity = { ...product, quantity };
+    // Create checkout data directly instead of using prepareCheckoutNavigation
+    const checkoutData = {
+      buyNow: true,
+      product: { 
+        ...product,
+        quantity: quantity
+      }
+    };
     
-    // Navigate directly to checkout with the buy now product
+    console.log("Navigating to checkout with data:", checkoutData);
+    
+    // Navigate to checkout with the product data
     navigate('/checkout', { 
-      state: { 
-        buyNow: true, 
-        product: productWithQuantity 
-      } 
+      state: checkoutData,
+      replace: false // Make sure this is a new history entry
     });
   };
 
@@ -249,11 +439,12 @@ const ProductDetail = () => {
             
             <Button
               variant="outline"
-              onClick={() => toggleFavorite(product.id)}
-              className={`flex-1 ${product.isFavorite ? 'text-red-500 border-red-500' : ''}`}
+              onClick={() => handleToggleFavorite(product._id || product.id)}
+              className={`flex-1 ${isFavorite ? 'text-red-500 border-red-500' : ''}`}
+              disabled={favoriteLoading}
             >
-              <Heart className={`mr-2 h-5 w-5 ${product.isFavorite ? 'fill-current text-red-500' : ''}`} />
-              {product.isFavorite ? t('removeFromWishlist') : t('addToWishlist')}
+              <Heart className={`mr-2 h-5 w-5 ${isFavorite ? 'fill-current text-red-500' : ''}`} />
+              {isFavorite ? t('removeFromWishlist') : t('addToWishlist')}
             </Button>
             
             <Button 
